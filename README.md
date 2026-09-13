@@ -44,5 +44,5 @@ How to run:
 
 1. Whole folder
 ```bash
-python -m src.main --input-dir data/CHAOS_DATA --q 0.8
+python -m src.main --input-dir data/CHAOS_DATA --output-dir results/... --q 0.8
 ```

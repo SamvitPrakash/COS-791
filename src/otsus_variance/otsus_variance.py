@@ -1,53 +1,48 @@
-from __future__ import annotations
-
+import cv2
 import numpy as np
 
-__all__ = [
-    "compute_normalised_histogram",
-    "otsu_variance",
-    "otsu_fitness",
-]
 
+def otsu_threshold(image: np.ndarray) -> int:
+    """Calculate optimal threshold using Otsu's between-class variance."""
 
-def compute_normalised_histogram(image: np.ndarray, n_bins: int = 256) -> np.ndarray:
-    image = np.asarray(image)
-    hist, _ = np.histogram(image.ravel(), bins=n_bins, range=(0, n_bins))
-    return hist.astype(np.float64) / image.size
+    hist = cv2.calcHist(
+        [image],
+        [0],
+        None,
+        [256],
+        [0, 256]
+    ).ravel()
 
+    prob = hist / hist.sum()
 
-def _sorted_unique_thresholds(thresholds, n_bins: int) -> np.ndarray:
-    t = np.round(np.asarray(thresholds, dtype=np.float64)).astype(int)
-    t = np.clip(t, 1, n_bins - 2)
-    return np.unique(t)
+    max_variance = -np.inf
+    optimal_t = 0
 
+    cumulative_prob = np.cumsum(prob)
+    cumulative_mean = np.cumsum(
+        np.arange(256) * prob
+    )
 
-def otsu_variance(thresholds, hist_probs: np.ndarray) -> float:
-    hist_probs = np.asarray(hist_probs, dtype=np.float64)
-    n_bins = hist_probs.size
-    levels = np.arange(n_bins, dtype=np.float64)
+    total_mean = cumulative_mean[-1]
 
-    t = _sorted_unique_thresholds(thresholds, n_bins)
+    for t in range(255):
+        w0 = cumulative_prob[t]
+        w1 = 1.0 - w0
 
-    mu_t = float(np.sum(levels * hist_probs))
-
-    cum_w = np.concatenate(([0.0], np.cumsum(hist_probs)))
-    cum_s = np.concatenate(([0.0], np.cumsum(levels * hist_probs)))
-
-    edges = np.concatenate(([0], t, [n_bins]))
-
-    variance = 0.0
-    for lo, hi in zip(edges[:-1], edges[1:]):
-        if lo >= hi:
+        if w0 <= 0 or w1 <= 0:
             continue
-        w_k = cum_w[hi] - cum_w[lo]
-        if w_k <= 0.0:
-            continue
-        mu_k = (cum_s[hi] - cum_s[lo]) / w_k
-        variance += w_k * (mu_k - mu_t) ** 2
 
-    return float(variance)
+        mu0 = cumulative_mean[t] / w0
+        mu1 = (total_mean - cumulative_mean[t]) / w1
 
+        between_variance = (
+            w0
+            * w1
+            * (mu0 - mu1) ** 2
+        )
 
-def otsu_fitness(thresholds, image: np.ndarray, n_bins: int = 256) -> float:
-    hist_probs = compute_normalised_histogram(image, n_bins=n_bins)
-    return otsu_variance(thresholds, hist_probs)
+        if between_variance > max_variance:
+            max_variance = between_variance
+            optimal_t = t
+
+    return int(optimal_t)

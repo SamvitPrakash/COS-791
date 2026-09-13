@@ -1,66 +1,43 @@
-from __future__ import annotations
-
-import argparse
-from pathlib import Path
-
 import cv2
 import numpy as np
 
-from .tsallis_segmentation import apply_multilevel_thresholds, tsallis_fitness
 
+def tsallis_threshold(image: np.ndarray, q: float = 0.8) -> int:
+    """Calculate optimal bi-level threshold using Tsallis non-extensive entropy."""
+    if q <= 0:
+        raise ValueError("q must be > 0")
 
-def _parse_thresholds(raw: str) -> list[int]:
-    values = [v.strip() for v in raw.split(",") if v.strip()]
-    if not values:
-        raise ValueError("No thresholds were provided.")
-    return [int(v) for v in values]
+    hist = cv2.calcHist([image], [0], None, [256], [0, 256]).ravel()
+    prob = hist / hist.sum()
 
+    eps = 1e-12
+    max_entropy = -np.inf
+    optimal_t = 0
 
-def _labels_to_uint8(labels: np.ndarray) -> np.ndarray:
-    max_label = int(labels.max())
-    if max_label == 0:
-        return np.zeros_like(labels, dtype=np.uint8)
-    return np.round((labels.astype(np.float64) / max_label) * 255.0).astype(np.uint8)
+    for t in range(255):
+        p0 = float(np.sum(prob[: t + 1]))
+        p1 = float(np.sum(prob[t + 1 :]))
 
+        if p0 <= eps or p1 <= eps:
+            continue
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Compute Tsallis multilevel objective and save segmented output."
-    )
-    parser.add_argument("--image", required=True, help="Path to a grayscale image.")
-    parser.add_argument(
-        "--thresholds",
-        required=True,
-        help="Comma-separated threshold list, e.g. 60,120,180",
-    )
-    parser.add_argument("--q", type=float, default=0.8, help="Tsallis q parameter.")
-    parser.add_argument(
-        "--output",
-        default=None,
-        help="Optional output path for segmented image.",
-    )
+        bg = prob[: t + 1] / p0
+        fg = prob[t + 1 :] / p1
 
-    args = parser.parse_args()
+        bg = bg[bg > 0]
+        fg = fg[fg > 0]
 
-    image_path = Path(args.image)
-    image = cv2.imread(str(image_path), cv2.IMREAD_GRAYSCALE)
-    if image is None:
-        raise ValueError(f"Could not load grayscale image: {image_path}")
+        if abs(q - 1.0) <= 1e-12:
+            s0 = -np.sum(bg * np.log(bg))
+            s1 = -np.sum(fg * np.log(fg))
+            total_entropy = s0 + s1
+        else:
+            s0 = (1.0 - np.sum(np.power(bg, q))) / (q - 1.0)
+            s1 = (1.0 - np.sum(np.power(fg, q))) / (q - 1.0)
+            total_entropy = s0 + s1 + (1.0 - q) * s0 * s1
 
-    thresholds = _parse_thresholds(args.thresholds)
-    score = tsallis_fitness(image=image, thresholds=thresholds, q=args.q)
-    print(f"Tsallis fitness (maximize) = {score:.10f}")
-    print(f"Tsallis cost (minimize)    = {-score:.10f}")
+        if total_entropy > max_entropy:
+            max_entropy = total_entropy
+            optimal_t = t
 
-    labels = apply_multilevel_thresholds(image=image, thresholds=thresholds)
-    segmented = _labels_to_uint8(labels)
-
-    output_path = Path(args.output) if args.output else image_path.with_name(
-        f"{image_path.stem}_tsallis_segmented{image_path.suffix}"
-    )
-    cv2.imwrite(str(output_path), segmented)
-    print(f"Saved segmented image to: {output_path}")
-
-
-if __name__ == "__main__":
-    main()
+    return optimal_t

@@ -1,26 +1,75 @@
-from src.otsus_variance.otsus_variance import compute_normalised_histogram, otsu_variance
+from __future__ import annotations
+
+import argparse
 from pathlib import Path
+
 import cv2
-import numpy as np
 
-def main():
-    PROJECT_ROOT = Path(__file__).resolve().parents[1]
-    DATA_DIR = PROJECT_ROOT / "data"
+from .kapur_segmentation import kapur_threshold
+from .tsallis_segmentation import tsallis_threshold
 
-    image_path = DATA_DIR / "BDS500" / "img1.png"
+
+def process_image(image_path: Path, q: float, output_dir: Path | None = None) -> None:
     image = cv2.imread(str(image_path), cv2.IMREAD_GRAYSCALE)
-
     if image is None:
-        raise FileNotFoundError(f"Could not load image at {image_path}")
+        print(f"[SKIP] Could not read image: {image_path}")
+        return
 
-    hist = compute_normalised_histogram(image)
+    kapur_t = kapur_threshold(image)
+    tsallis_t = tsallis_threshold(image, q=q)
 
-    def fitness(candidate_vector):
-        return otsu_variance(candidate_vector, hist)
+    _, kapur_segmented = cv2.threshold(image, kapur_t, 255, cv2.THRESH_BINARY)
+    _, tsallis_segmented = cv2.threshold(image, tsallis_t, 255, cv2.THRESH_BINARY)
 
-    candidate = [80, 130, 190]
-    score = fitness(candidate)
-    print(f"Thresholds {candidate} -> variance {score:.4f}")
+    out_dir = output_dir if output_dir is not None else image_path.parent
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    kapur_out = out_dir / f"{image_path.stem}_kapur_segmented{image_path.suffix}"
+    tsallis_out = out_dir / f"{image_path.stem}_tsallis_segmented{image_path.suffix}"
+
+    cv2.imwrite(str(kapur_out), kapur_segmented)
+    cv2.imwrite(str(tsallis_out), tsallis_segmented)
+
+    print(f"Processing '{image_path.name}'")
+    print(f"  -> Kapur Threshold: {kapur_t}")
+    print(f"  -> Tsallis Threshold (q={q}): {tsallis_t}")
+    print(f"  -> Saved: {kapur_out}")
+    print(f"  -> Saved: {tsallis_out}\n")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Run Kapur and Tsallis thresholding on one image or all PNG images in a directory."
+    )
+    parser.add_argument("--image", help="Path to one PNG image.")
+    parser.add_argument("--input-dir", help="Directory containing PNG images.")
+    parser.add_argument("--q", type=float, default=0.8, help="Tsallis q parameter.")
+    parser.add_argument("--output-dir", help="Optional output directory.")
+
+    args = parser.parse_args()
+
+    if bool(args.image) == bool(args.input_dir):
+        raise ValueError("Provide exactly one of --image or --input-dir.")
+
+    output_dir = Path(args.output_dir) if args.output_dir else None
+
+    if args.image:
+        process_image(Path(args.image), q=args.q, output_dir=output_dir)
+        return
+
+    input_dir = Path(args.input_dir)
+    png_files = sorted(input_dir.glob("*.png"))
+    if not png_files:
+        print(f"No .png files found in: {input_dir}")
+        return
+
+    print(f"Found {len(png_files)} .png file(s). Starting processing...\n")
+    for image_path in png_files:
+        if "_segmented" in image_path.name:
+            continue
+        process_image(image_path, q=args.q, output_dir=output_dir)
+
+    print("All files have been processed successfully!")
 
 
 if __name__ == "__main__":

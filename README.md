@@ -39,3 +39,10 @@ You should add your files into src/ and create a directory named after what you'
 __init__.py
 ```
 file. You can paste your code here.
+
+How to run:
+
+1. Whole folder
+```bash
+python -m src.main --input-dir data/CHAOS_DATA --output-dir results/... --q 0.8
+```

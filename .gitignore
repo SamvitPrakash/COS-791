@@ -1,5 +1,5 @@
 src/__pycache__
-# src/kapurs_entropy/__pycache__
-# src/otsus_variance/__pycache__
-# src/tsallis_entropy/__pycache__
+src/kapurs_entropy/__pycache__
+src/otsus_variance/__pycache__
+src/tsallis_entropy/__pycache__
 .venv/

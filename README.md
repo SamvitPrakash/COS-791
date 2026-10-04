@@ -43,6 +43,8 @@ file. You can paste your code here.
 How to run:
 
 1. Whole folder
-```bash
 python -m src.main --input-dir data/CHAOS_DATA --output-dir results/... --q 0.8
-```
+
+
+2. Single image
+python -m src.main --image data/CHAOS_DATA/IMG-0003-00010.png --output-dir results/single --q 0.8
